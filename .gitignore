@@ -9,6 +9,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 env/
+.idea/
 reports/
 allure_cmd/
 allure-report/
