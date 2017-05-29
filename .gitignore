@@ -9,6 +9,9 @@ __pycache__/
 # Distribution / packaging
 .Python
 env/
+reports/
+allure_cmd/
+allure-report/
 build/
 develop-eggs/
 dist/
