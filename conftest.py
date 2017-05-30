@@ -1,17 +1,13 @@
 import pytest
 import allure
 import re
-from pprint import pprint
 import paramiko
-
-from allure.constants import AttachmentType
 from datetime import datetime
 
 from twisted.internet.protocol import Protocol
 from twisted.internet.protocol import Factory
 from twisted.internet.protocol import ServerFactory
 from twisted.internet.defer import Deferred
-from twisted.internet.defer import maybeDeferred
 from twisted.internet.defer import succeed
 
 
@@ -150,24 +146,6 @@ def data_maket_mea1209_1211():
         "server_port2": 10001,
         "server_host": "192.168.10.168",
         "server_localhost": "127.0.0.1",
-        "client_eha_side_1": "192.168.101.3",
-        "client_eha_side_2": "192.168.101.4",
-        "client_eha_float": "192.168.101.5",
-        "double": True,
-        "active_side": None,
-        "remore_config_eha1": "Empty",
-        "remore_config_eha2": "Empty",
-        "timeout_connect": 3,
-        "timeout_disconnect": 60,
-        "user": 'root',
-        "secret": 'iskratel',
-        }
-
-    data_new = {
-        "server_port1": 10000,
-        "server_port2": 10001,
-        "server_host": "192.168.10.168",
-        "server_localhost": "127.0.0.1",
         "double": True,
         "client_eha_side_1": {"ip": "192.168.101.3", "version": "Empty", "Other": ""},
         "client_eha_side_2": {"ip": "192.168.101.4", "version": "Empty"},
@@ -180,15 +158,119 @@ def data_maket_mea1209_1211():
         }
 
     def print_data(data):
-        return ''.join(["\n{}: {}".format(item[0], item[1]) for item in data_new.items()])
+        return ''.join(["\n{}: {}".format(item[0], item[1]) for item in data.items()])
         #return ''.join(["\n{}: {}".format(item[0], item[1]) for item in data.items()])
 
-    stend_data = print_data(data_new)
+    stend_data = print_data(data)
     print(stend_data)
     with pytest.allure.step("Stend configuration data"):
         allure.attach("Stend data", print_data(data))
 
-    return data_new
+    return data
+
+@pytest.fixture()
+def data_maket_mea809():
+    data = {
+            "server_port1": 10000,
+            "server_port2": 10001,
+            "server_host": "192.168.10.168",
+            "server_localhost": "127.0.0.1",
+            "double": False,
+            "client_eha_side_1": {"ip": "192.168.121.119", "version": "Empty", "Other": ""},
+            "client_eha_side_2": {"ip": "192.168.101.4", "version": "Empty", "Other": ""},
+            "client_eha_float": {"ip": "192.168.101.5"},
+            "active_side": "Empty",
+            "timeout_connect": 3,
+            "timeout_disconnect": 60,
+            "user": 'root',
+            "secret": 'iskratel',
+        }
+
+    return data
+
+@pytest.fixture()
+def chk_active_side_eha():
+
+    def check_side_eha(data):
+
+        def show_status_stend(data):
+            def print_data(data):
+                return ''.join(["\n{}: {}".format(item[0], item[1]) for item in data.items()])
+
+            # print(print_data(data))
+            with pytest.allure.step("Stend configuration data"):
+                allure.attach("Stend data", print_data(data))
+
+        def chk_side(eha, user, passwd, data):
+
+            try:
+                client = paramiko.SSHClient()
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ip = data[eha]["ip"]
+                # pprint("eha: {}".format(eha))
+                # pprint("data: {}".format(data))
+                client.connect(ip, username=user, password=passwd, timeout=2)
+                stdin, stdout, stderr = client.exec_command('ls -l /opt/jboss-as/standalone/deployments/eha*')
+                version = stdout.read() + stderr.read()
+                version_eha = version.decode('utf-8').splitlines()
+                data[eha]["version"] = ''.join(["{}\n".format(ver) for ver in version_eha])
+                # pprint("version: {}".format(data[eha]["version"]))
+                stdin, stdout, stderr = client.exec_command('cat /proc/drbd')
+                status = stdout.read() + stderr.read()
+                status_eha = status.decode('utf-8').splitlines()
+                for active in status_eha:
+                    if re.search("Primary/Secondary", active):
+                        data["active_side"] = data[eha]
+                        data[eha]["Other"] = "Primary/Secondary"
+                        print("Checking EHA is double side!!!")
+                        return True
+                        break
+
+                    if re.search("Secondary/Primary", active):
+                        # print("active: {}".format(active))
+                        # print("Other: {}".format(data[eha]["Other"]))
+                        data[eha]["Other"] = "SecondaryPrimary"
+                        return True
+                        break
+
+                    if re.search("No such file or directory", active):
+                        data["active_side"] = data[eha]
+                        data[eha]["Other"] = "No such file or directory"
+                        print("checking EHA is standalone side!!!")
+                        return True
+
+
+                client.close()
+            except paramiko.ssh_exception.AuthenticationException:
+                data[eha]["Other"] = "Authentication failed."
+                return False
+            except:
+                data[eha]["Other"] = "TimeoutError"
+                return False
+
+        assert chk_side("client_eha_side_1", data["user"], data["secret"], data),\
+            "{}\n{}".format(data["client_eha_side_1"]["Other"], show_status_stend(data))
+        if data["double"]:
+            if not chk_side("client_eha_side_2", data["user"], data["secret"], data):
+                show_status_stend(data)
+                raise (data["client_eha_side_1"]["Other"])
+
+        show_status_stend(data)
+
+        # tt = ''.join(["\n{}: {}".format(item[0], item[1]) for item in data.items()])
+        # print("tt: {}".format(tt))
+        # print("Active side: {}".format(data["active_side"]))
+        return ''.join(["\n{}: {}".format(item[0], item[1]) for item in data.items()])
+
+    return check_side_eha
+
+
+
+
+@pytest.fixture()
+def check_side_mea809(chk_active_side_eha, data_maket_mea809):
+    return chk_active_side_eha(data_maket_mea809)
+
 
 
 @pytest.fixture()
@@ -506,6 +588,114 @@ def test_server_3_1():
 
 # ############################################################################
 
+# ############################### TEST 5 #############################################
+
+class ServerServiceProtocol_5_1(Protocol):
+
+    def prnt(self, status):
+        print("prnt: {}".format(status))
+
+    @allure.step("connectionMade")
+    def connectionMade(self):
+        print("\n{} Conn Made...{}".format(date_time(), self.transport.getPeer()))
+        print("\nStatus_connect before: {}".format(self.factory.status_connect))
+        self.factory.count_connect.append(self.transport.getPeer())
+        if not self.factory.status_connect:
+            self.factory.status_connect = "{}:{}:{}"\
+                .format(date_time(),\
+                        self.transport.getPeer().host,\
+                        self.transport.getPeer().port)
+            allure.attach("In Connect",\
+                          "source address: {}".format(self.factory.status_connect))
+            print("\nStatus_connect after: {}".format(self.factory.status_connect))
+        else:
+            if self.factory.status_connect:
+                print("\n{} Conn Close...{}".format(date_time(), self.transport.getPeer()))
+                self.transport.loseConnection()
+
+    def connectionLost(self, reason):
+        print("\nConnection lost {}\n{}".format(reason, self.transport.getPeer()))
+        if re.search("Connection was closed cleanly", str(reason)):
+            succeed(self.factory.server.check_discon_after_connected(reason))
+
+
+class ServerServiceFactory_5_1(Factory):
+    protocol = ServerServiceProtocol_3_1
+
+    def __init__(self, server, deferred, data):
+        self.server = server
+        self.deferred = deferred
+        # self.service = service
+        self.status_connect = False
+        self.timeout_disconnect = data["timeout_disconnect"]
+        self.count_connect = []
+        print("\nInitial factory deferred: {}, time_out: {}"\
+              .format(self.deferred, self.timeout_disconnect))
+        from twisted.internet import reactor
+        reactor.callLater(self.timeout_disconnect, self.chk_timeout_disconnect)
+        # reactor.callLater(0, self.get_eha_data)
+
+    def chk(self):
+        print("{} In chk()".format(date_time()))
+        succeed(self.server.check_timeout_connected(self.status_connect))
+
+    def chk_timeout_disconnect(self):
+        print("{} In chk_timeout_disconnect()".format(date_time()))
+        succeed(self.server.check_discon_after_connected(self.status_connect))
+
+    def return_result(self, status):
+        print("return_result_ok: {}".format(status))
+        if self.deferred is not None:
+            d, self.deferred = self.deferred, None
+        # if status:
+        d.callback(status)
+
+    def get_eha_data(self):
+        with pytest.allure.step("Get config data from EHA"):
+            allure.attach("Get config data from EHA", self.server.get_eha_data())
+        # print(self.server.get_eha_data())
+
+
+# tearUp/tearDown
+@pytest.yield_fixture()
+def test_server_3_1():
+    endpoint = None
+    ss = None
+
+    @allure.step("Create test_server3() from tearUp/tearDown")
+    # def server(host, port, timeout_connect, data):
+    def server(data, port, test=None):
+        d = Deferred()
+        host = data["server_host"]
+        timeout_connect = data["timeout_connect"]
+        # allure.attach("Defer from factory", "Create deferred for Factory: {} ".format(d))
+        # service = service_1(data, port)
+        allure.attach("Create_test_server", "Create_test_server: {}:{}".format(host, port))
+        nonlocal endpoint
+        assert endpoint is None
+        nonlocal ss
+        assert ss is None
+        if test is None:
+            ss = Server_Test3(host, port, timeout_connect, data, d)
+        elif re.search("test_2", test):
+            ss = Server_Test3.from_test_2(host, port, timeout_connect, data, d)
+        elif re.search("test_3", test):
+            ss = Server_Test3.from_test_3(host, port, timeout_connect, data, d)
+        ss.chk_eha_config()
+
+        from twisted.internet import reactor
+        endpoint = reactor.listenTCP(port, ss.factory, interface=host)
+        return d
+    yield server
+    with allure.step("Stop test server"):
+        if endpoint is not None:
+            allure.attach("Stop test server", "Stop test server:{}".format(endpoint))
+            endpoint.stopListening()
+
+
+# ############################################################################
+
+
 # tearUp/tearDown
 # @pytest.yield_fixture()
 # def test_server_2():
@@ -636,7 +826,7 @@ class Server_Test3(object):
             self.factory.return_result((status, "Delay {} seconds connection to local port {} from EHA"\
                                        .format(self.timeout_disconnect, self.port)))
 
-        elif re.search(self.data["active_side"], str(status)):
+        elif re.search(str(self.data["active_side"]), str(status)):
             print("\nChecking active side succes {}".format(status))
             return self.factory.return_result((True, "Checking connect EHA client from active side succes {}".format(status)))
         else:
@@ -663,18 +853,20 @@ class Server_Test3(object):
                 status = stdout.read() + stderr.read()
                 status_eha = status.decode('utf-8').splitlines()
                 for active in status_eha:
-                    if re.search("Secondary/Primary", active):
-                        # print("active: {}".format(active))
-                        # print("Other: {}".format(data[eha]["Other"]))
-                        data[eha]["Other"] = "SecondaryPrimary"
-                        return False
-                        break
                     if re.search("Primary/Secondary", active):
                         data["active_side"] = data[eha]
                         data[eha]["Other"] = "Primary/Secondary"
                         print("Checking EHA is double side!!!")
                         return True
                         break
+
+                    if re.search("Secondary/Primary", active):
+                        # print("active: {}".format(active))
+                        # print("Other: {}".format(data[eha]["Other"]))
+                        data[eha]["Other"] = "SecondaryPrimary"
+                        return True
+                        break
+
                     if re.search("No such file or directory", active):
                         data["active_side"] = data[eha]
                         data[eha]["Other"] = "No such file or directory"
@@ -687,19 +879,14 @@ class Server_Test3(object):
             except TimeoutError:
                 return("TimeoutError")
 
-        #if self.data["double"]:
-        chk_side("client_eha_side_1", self.data["user"], self.data["secret"], self.data)
-                # self.data["active_side"] = self.data["client_eha_side_1"]
-        chk_side("client_eha_side_2", self.data["user"], self.data["secret"],self.data)
-                    # self.data["active_side"] = self.data["client_eha_side_2"]
+        if chk_side("client_eha_side_1", self.data["user"], self.data["secret"], self.data):
+                chk_side("client_eha_side_2", self.data["user"], self.data["secret"],self.data)
+
+
         tt = ''.join(["\n{}: {}".format(item[0], item[1]) for item in self.data.items()])
         print("tt: {}".format(tt))
         print("Active side: {}".format(self.data["active_side"]))
         return  ''.join(["\n{}: {}".format(item[0], item[1]) for item in self.data.items()])
-
-
-            
-
 
 
 
@@ -707,10 +894,7 @@ class Server_Test3(object):
         with pytest.allure.step("Get data from EHA"):
             # allure.attach("Get version EHA", self.get_eha_version())
             allure.attach("Get version EHA", self.chk_active_side_eha())
-            
-            # allure.attach("Get ha status EHA", self.data["active_side"])
-        # print(self.get_eha_version())
-        # print("act_side: {}".format(self.data["active_side"]))
+
 
     def get_eha_version(self):
         return_data = []
