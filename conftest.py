@@ -3,6 +3,7 @@ import allure
 import re
 import paramiko
 from datetime import datetime
+import time
 
 from twisted.internet.protocol import Protocol
 from twisted.internet.protocol import Factory
@@ -606,7 +607,7 @@ class ServerServiceProtocol_5_1(Protocol):
             print("\nStatus_connect after: {}".format(self.factory.status_connect))
             succeed(self.factory.server.checking_connecting_from_another_address(self.factory.status_connect))
             from twisted.internet import reactor
-            reactor.callLater(0, self.dataSend)
+            self.timer_600()
         else:
             # if self.factory.status_connect:
             print("\n{} Conn Close...{}".format(date_time(), self.transport.getPeer()))
@@ -618,18 +619,20 @@ class ServerServiceProtocol_5_1(Protocol):
         if re.search("Connection was closed cleanly", str(reason)):
             succeed(self.factory.server.check_discon_after_connected(str(reason) + str(self.transport.getPeer())))
 
-    def dataSend(self):
+    def dataSend(self, status):
         send = bytes("Hello Eha!!!", 'utf-8')
         hdlc = b'\x10\x02\x00\x01\x02\x00\x00\x00*\x00\xeb\x14\x00\x1c2W\xe4\xeb\xe4\x1b\xe4\x1b\xe4\x1b\xe4\x1b@\xad2W\xe6\x14\x1b\xe4\x1b\xe4\x1b\xe4\x1b\xe4\xbf(\xe6\x10\x10\x10\x83'
         self.transport.write(hdlc)
+        self.transport.write(hdlc)
         print("send data: {}".format(hdlc))
-        # if self.system_data["HDLC_SEND_STATUS"]:
-        #    status = self.system_data["HDLC_SEND_STATUS"]
-        #    self.transport.write(status)
-        #    self.system_data["HDLC_SEND_STATUS"] = None
-        #    logger_client_eha.info("Send status => {}".format(status))
-        #else:
-        #    logger_client_eha.info("Empty Data for Send status = {}".format(status))
+        from twisted.internet import reactor
+        self.timer_600()
+
+    def timer_600(self):
+        print("timer_600")
+        from twisted.internet import reactor
+        reactor.callLater(0.6, self.dataSend, "status")
+
 
 
 
@@ -648,7 +651,7 @@ class ServerServiceFactory_5_1(Factory):
               .format(self.deferred, self.protocol,  self.timeout_connect))
         from twisted.internet import reactor
         reactor.callLater(self.timeout_connect, self.chk_connect)
-        # reactor.callLater(0, self.get_eha_data)
+
 
     def chk_connect(self):
         print("{} In chk()".format(date_time()))
@@ -666,6 +669,9 @@ class ServerServiceFactory_5_1(Factory):
             if self.deferred is not None:
                 d, self.deferred = self.deferred, None
             d.callback(status)
+
+    def return_test(self):
+        self.return_result((None, "end test"))
 
     def get_eha_data(self):
         with pytest.allure.step("Get config data from EHA"):
@@ -700,7 +706,7 @@ def test_server_5_1():
             ss = Server_Test3.from_test_3(host, port, timeout_connect, data, d)
         elif re.search("test_5", test):
             ss = Server_Test3.from_test_5(host, port, timeout_connect, data, d)
-        ss.chk_eha_config()
+        # ss.chk_eha_config()
 
         from twisted.internet import reactor
         endpoint = reactor.listenTCP(port, ss.factory, interface=host)

@@ -14,22 +14,13 @@ def maket3_test_5_con1(test_server_5_1, data_maket_mea809, check_side_mea809):
 def test_5_con1(maket3_test_5_con1):
     """Test Service connect client EHA to test server for port1"""
     d = maket3_test_5_con1
-    st = False
     print("\ncheck_connect test: {}")
     def check_connect(status):
         print("\ncheck_connect test: {}".format(status))
         stat, desc = status
-        assert stat, desc
-        nonlocal st
-        st = True
-
+        assert stat == None, desc
 
     d.addCallback(check_connect)
-    if st:
-        d.close()
-        d = None
-        d.addCallback(check_connect)
-        st = False
 
     return d
 
