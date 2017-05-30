@@ -180,7 +180,7 @@ def data_maket_mea809():
             "client_eha_side_2": {"ip": "192.168.101.4", "version": "Empty", "Other": ""},
             "client_eha_float": {"ip": "192.168.101.5"},
             "active_side": "Empty",
-            "timeout_connect": 3,
+            "timeout_connect": 10,
             "timeout_disconnect": 60,
             "user": 'root',
             "secret": 'iskratel',
@@ -256,10 +256,6 @@ def chk_active_side_eha():
                 raise (data["client_eha_side_1"]["Other"])
 
         show_status_stend(data)
-
-        # tt = ''.join(["\n{}: {}".format(item[0], item[1]) for item in data.items()])
-        # print("tt: {}".format(tt))
-        # print("Active side: {}".format(data["active_side"]))
         return ''.join(["\n{}: {}".format(item[0], item[1]) for item in data.items()])
 
     return check_side_eha
@@ -608,34 +604,53 @@ class ServerServiceProtocol_5_1(Protocol):
             allure.attach("In Connect",\
                           "source address: {}".format(self.factory.status_connect))
             print("\nStatus_connect after: {}".format(self.factory.status_connect))
+            succeed(self.factory.server.checking_connecting_from_another_address(self.factory.status_connect))
+            from twisted.internet import reactor
+            reactor.callLater(0, self.dataSend)
         else:
-            if self.factory.status_connect:
-                print("\n{} Conn Close...{}".format(date_time(), self.transport.getPeer()))
-                self.transport.loseConnection()
+            # if self.factory.status_connect:
+            print("\n{} Conn Close...{}".format(date_time(), self.transport.getPeer()))
+            succeed(self.factory.server.check_attempted_reconnection_in_active_state(str(self.transport.getPeer())))
+            self.transport.loseConnection()
 
     def connectionLost(self, reason):
-        print("\nConnection lost {}\n{}".format(reason, self.transport.getPeer()))
+        print("\n{} Connection lost {}\n{}".format(date_time(), reason, self.transport.getPeer()))
         if re.search("Connection was closed cleanly", str(reason)):
-            succeed(self.factory.server.check_discon_after_connected(reason))
+            succeed(self.factory.server.check_discon_after_connected(str(reason) + str(self.transport.getPeer())))
+
+    def dataSend(self):
+        send = bytes("Hello Eha!!!", 'utf-8')
+        hdlc = b'\x10\x02\x00\x01\x02\x00\x00\x00*\x00\xeb\x14\x00\x1c2W\xe4\xeb\xe4\x1b\xe4\x1b\xe4\x1b\xe4\x1b@\xad2W\xe6\x14\x1b\xe4\x1b\xe4\x1b\xe4\x1b\xe4\xbf(\xe6\x10\x10\x10\x83'
+        self.transport.write(hdlc)
+        print("send data: {}".format(hdlc))
+        # if self.system_data["HDLC_SEND_STATUS"]:
+        #    status = self.system_data["HDLC_SEND_STATUS"]
+        #    self.transport.write(status)
+        #    self.system_data["HDLC_SEND_STATUS"] = None
+        #    logger_client_eha.info("Send status => {}".format(status))
+        #else:
+        #    logger_client_eha.info("Empty Data for Send status = {}".format(status))
+
 
 
 class ServerServiceFactory_5_1(Factory):
-    protocol = ServerServiceProtocol_3_1
+    protocol = ServerServiceProtocol_5_1
 
     def __init__(self, server, deferred, data):
         self.server = server
         self.deferred = deferred
         # self.service = service
         self.status_connect = False
+        self.timeout_connect = data["timeout_connect"]
         self.timeout_disconnect = data["timeout_disconnect"]
         self.count_connect = []
-        print("\nInitial factory deferred: {}, time_out: {}"\
-              .format(self.deferred, self.timeout_disconnect))
+        print("\nInitial factory deferred: {}, protocol: {}, time_out: {}"\
+              .format(self.deferred, self.protocol,  self.timeout_connect))
         from twisted.internet import reactor
-        reactor.callLater(self.timeout_disconnect, self.chk_timeout_disconnect)
+        reactor.callLater(self.timeout_connect, self.chk_connect)
         # reactor.callLater(0, self.get_eha_data)
 
-    def chk(self):
+    def chk_connect(self):
         print("{} In chk()".format(date_time()))
         succeed(self.server.check_timeout_connected(self.status_connect))
 
@@ -645,10 +660,12 @@ class ServerServiceFactory_5_1(Factory):
 
     def return_result(self, status):
         print("return_result_ok: {}".format(status))
-        if self.deferred is not None:
-            d, self.deferred = self.deferred, None
-        # if status:
-        d.callback(status)
+        if status[0]:
+            return
+        else:
+            if self.deferred is not None:
+                d, self.deferred = self.deferred, None
+            d.callback(status)
 
     def get_eha_data(self):
         with pytest.allure.step("Get config data from EHA"):
@@ -658,7 +675,7 @@ class ServerServiceFactory_5_1(Factory):
 
 # tearUp/tearDown
 @pytest.yield_fixture()
-def test_server_3_1():
+def test_server_5_1():
     endpoint = None
     ss = None
 
@@ -681,6 +698,8 @@ def test_server_3_1():
             ss = Server_Test3.from_test_2(host, port, timeout_connect, data, d)
         elif re.search("test_3", test):
             ss = Server_Test3.from_test_3(host, port, timeout_connect, data, d)
+        elif re.search("test_5", test):
+            ss = Server_Test3.from_test_5(host, port, timeout_connect, data, d)
         ss.chk_eha_config()
 
         from twisted.internet import reactor
@@ -769,6 +788,10 @@ class Server_Test3(object):
             self.factory = ServerServiceFactory_2_1(self, self.d, self.data)
         elif test == "test_3":
             self.factory = ServerServiceFactory_3_1(self, self.d, self.data)
+
+        elif test == "test_5":
+            self.factory = ServerServiceFactory_5_1(self, self.d, self.data)
+
         else:
             self.factory = ServerServiceFactory_3(self, self.d, self.data)
 
@@ -779,6 +802,11 @@ class Server_Test3(object):
     @classmethod
     def from_test_2(cls, host, port, timeout_connect, data, d):
         return cls(host, port, timeout_connect, data, d, "test_2")
+
+    @classmethod
+    def from_test_5(cls, host, port, timeout_connect, data, d):
+        print("create server from test 5")
+        return cls(host, port, timeout_connect, data, d, "test_5")
 
     @allure.step("Call check_timeout_connected()")
     def check_timeout_connected(self, status):
@@ -804,9 +832,12 @@ class Server_Test3(object):
             self.factory.return_result((status, "Delay {} seconds connection to local port {} from EHA"\
                                        .format(self.timeout_disconnect, self.port)))
 
-        elif re.search("Connection was closed cleanly", str(status)):
+        elif re.search("Connection was closed cleanly", str(status)) and\
+                re.search(str(self.data["active_side"]["ip"]), str(status)):
             print("\nConnection was closed cleanly {}".format(status))
+            self.factory.status_connect = False
             return self.factory.return_result((False, "\n{} Connection was closed cleanly {}".format(date_time(), status)))
+
         else:
             return self.factory.return_result((True, status))
 
@@ -826,13 +857,19 @@ class Server_Test3(object):
             self.factory.return_result((status, "Delay {} seconds connection to local port {} from EHA"\
                                        .format(self.timeout_disconnect, self.port)))
 
-        elif re.search(str(self.data["active_side"]), str(status)):
+        elif re.search(str(self.data["active_side"]["ip"]), str(status)):
             print("\nChecking active side succes {}".format(status))
             return self.factory.return_result((True, "Checking connect EHA client from active side succes {}".format(status)))
         else:
             return self.factory.return_result((False, "Connecting from another address to server: {}".format(status)))
 
-
+    @allure.step("Call Checking connecting from another address()")
+    def check_attempted_reconnection_in_active_state(self, getpeer):
+        if re.search(str(self.data["active_side"]["ip"]), getpeer):
+            return self.factory.return_result((False, "Detected attempted reconnection from own side EHA in active state: {}".format(getpeer)))
+        else:
+            return self.factory.return_result((False,
+                                              "Detected attempted reconnection from other side in active state: {}".format(getpeer)))
 
     def chk_active_side_eha(self):
 
