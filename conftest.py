@@ -619,12 +619,15 @@ class ServerServiceProtocol_5_1(Protocol):
         if re.search("Connection was closed cleanly", str(reason)):
             succeed(self.factory.server.check_discon_after_connected(str(reason) + str(self.transport.getPeer())))
 
+    def dataReceived(self, data):
+        print("{} receive status: {}".format(date_time(), data))
+
     def dataSend(self, status):
         send = bytes("Hello Eha!!!", 'utf-8')
         hdlc = b'\x10\x02\x00\x01\x02\x00\x00\x00*\x00\xeb\x14\x00\x1c2W\xe4\xeb\xe4\x1b\xe4\x1b\xe4\x1b\xe4\x1b@\xad2W\xe6\x14\x1b\xe4\x1b\xe4\x1b\xe4\x1b\xe4\xbf(\xe6\x10\x10\x10\x83'
         self.transport.write(hdlc)
         self.transport.write(hdlc)
-        print("send data: {}".format(hdlc))
+        print("{} send data: {}".format(date_time(), hdlc))
         from twisted.internet import reactor
         self.timer_600()
 
@@ -651,6 +654,8 @@ class ServerServiceFactory_5_1(Factory):
               .format(self.deferred, self.protocol,  self.timeout_connect))
         from twisted.internet import reactor
         reactor.callLater(self.timeout_connect, self.chk_connect)
+        reactor.callLater(60*60, self.return_test)
+
 
 
     def chk_connect(self):
