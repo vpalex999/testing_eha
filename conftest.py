@@ -4,6 +4,7 @@ import re
 import paramiko
 from datetime import datetime
 import time
+from statistics import mean
 
 from twisted.internet.protocol import Protocol
 from twisted.internet.protocol import Factory
@@ -181,10 +182,14 @@ def data_maket_mea809():
             "client_eha_side_2": {"ip": "192.168.101.4", "version": "Empty", "Other": ""},
             "client_eha_float": {"ip": "192.168.101.5"},
             "active_side": "Empty",
-            "timeout_connect": 10,
+            "timeout_connect": 3,
             "timeout_disconnect": 60,
             "user": 'root',
             "secret": 'iskratel',
+            "statistics": {
+                "stat_orders": {"count_send_orders": 0, "min_delta": 0, "max_delta": 0, "average": 0},
+                "stat_status": {"count_received_status": 0, "min_delta": 0, "max_delta": 0, "average": 0}
+            }
         }
 
     return data
@@ -583,8 +588,6 @@ def test_server_3_1():
             endpoint.stopListening()
 
 
-# ############################################################################
-
 # ############################### TEST 5 #############################################
 
 class ServerServiceProtocol_5_1(Protocol):
@@ -598,6 +601,7 @@ class ServerServiceProtocol_5_1(Protocol):
         print("\nStatus_connect before: {}".format(self.factory.status_connect))
         self.factory.count_connect.append(self.transport.getPeer())
         if not self.factory.status_connect:
+            self.factory.start_time = time.time()
             self.factory.status_connect = "{}:{}:{}"\
                 .format(date_time(),\
                         self.transport.getPeer().host,\
@@ -606,7 +610,6 @@ class ServerServiceProtocol_5_1(Protocol):
                           "source address: {}".format(self.factory.status_connect))
             print("\nStatus_connect after: {}".format(self.factory.status_connect))
             succeed(self.factory.server.checking_connecting_from_another_address(self.factory.status_connect))
-            from twisted.internet import reactor
             self.timer_600()
         else:
             # if self.factory.status_connect:
@@ -620,19 +623,25 @@ class ServerServiceProtocol_5_1(Protocol):
             succeed(self.factory.server.check_discon_after_connected(str(reason) + str(self.transport.getPeer())))
 
     def dataReceived(self, data):
-        print("{} receive status: {}".format(date_time(), data))
+        delta_time = time.time() - self.factory.start_time
+        self.factory.delta_status.append(time.time() - self.factory.start_time)
+        self.factory.stat_status["count_received_status"] += 1
+
+        print("{} {:0.3f} receive status: {}".format(date_time(), delta_time, data))
 
     def dataSend(self, status):
-        send = bytes("Hello Eha!!!", 'utf-8')
         hdlc = b'\x10\x02\x00\x01\x02\x00\x00\x00*\x00\xeb\x14\x00\x1c2W\xe4\xeb\xe4\x1b\xe4\x1b\xe4\x1b\xe4\x1b@\xad2W\xe6\x14\x1b\xe4\x1b\xe4\x1b\xe4\x1b\xe4\xbf(\xe6\x10\x10\x10\x83'
+        delta_time = time.time() - self.factory.start_time
+        self.factory.delta_orders.append(time.time() - self.factory.start_time)
         self.transport.write(hdlc)
-        self.transport.write(hdlc)
-        print("{} send data: {}".format(date_time(), hdlc))
-        from twisted.internet import reactor
+        self.factory.start_time = time.time()
+        print("{} {:0.3f} send data: {}".format(date_time(), delta_time, hdlc))
+        self.factory.stat_orders["count_send_orders"] += 1
         self.timer_600()
 
+    # Автомат генерирует накачку каждые 600мс от начала соединения
     def timer_600(self):
-        print("timer_600")
+        # print("timer_600")
         from twisted.internet import reactor
         reactor.callLater(0.6, self.dataSend, "status")
 
@@ -643,6 +652,7 @@ class ServerServiceFactory_5_1(Factory):
     protocol = ServerServiceProtocol_5_1
 
     def __init__(self, server, deferred, data):
+        self.start_time = time.time()
         self.server = server
         self.deferred = deferred
         # self.service = service
@@ -650,11 +660,21 @@ class ServerServiceFactory_5_1(Factory):
         self.timeout_connect = data["timeout_connect"]
         self.timeout_disconnect = data["timeout_disconnect"]
         self.count_connect = []
+
+        self.delta_orders = []
+        self.delta_status = []
+        self.stat_orders = data["statistics"]["stat_orders"]
+        self.stat_status = data["statistics"]["stat_status"]
+        print(self.stat_orders)
+        print(self.stat_status)
+        # self.stat_orders = {"count_send_orders": 0, "min_delta": 0, "max_delta": 0, "average": 0}
+        # self.stat_status = {"count_received_status": 0, "min_delta": 0, "max_delta": 0, "average": 0}
+        self.timeout_work_test = 60  # seconds
         print("\nInitial factory deferred: {}, protocol: {}, time_out: {}"\
               .format(self.deferred, self.protocol,  self.timeout_connect))
         from twisted.internet import reactor
         reactor.callLater(self.timeout_connect, self.chk_connect)
-        reactor.callLater(60*60, self.return_test)
+        reactor.callLater(self.timeout_work_test, self.stop_test)
 
 
 
@@ -675,13 +695,25 @@ class ServerServiceFactory_5_1(Factory):
                 d, self.deferred = self.deferred, None
             d.callback(status)
 
-    def return_test(self):
-        self.return_result((None, "end test"))
+    def stop_test(self):
+        succeed(self.average(self.delta_orders, self.stat_orders))
+        succeed(self.average(self.delta_status, self.stat_status))
+        self.return_result((None, "\nStatistics data:\nSend orders{}\nReceived status: {}"\
+                           .format(self.stat_orders, self.stat_status)))
 
     def get_eha_data(self):
         with pytest.allure.step("Get config data from EHA"):
             allure.attach("Get config data from EHA", self.server.get_eha_data())
         # print(self.server.get_eha_data())
+
+    def average(self, delta, dict):
+        dict["min_delta"] = float('{:.3f}'.format(min(delta)))
+        dict["max_delta"] = float('{:.3f}'.format(max(delta)))
+        dict["average"] = float('{:.3f}'.format(mean(delta)))
+
+
+
+
 
 
 # tearUp/tearDown
@@ -711,7 +743,6 @@ def test_server_5_1():
             ss = Server_Test3.from_test_3(host, port, timeout_connect, data, d)
         elif re.search("test_5", test):
             ss = Server_Test3.from_test_5(host, port, timeout_connect, data, d)
-        # ss.chk_eha_config()
 
         from twisted.internet import reactor
         endpoint = reactor.listenTCP(port, ss.factory, interface=host)
@@ -719,6 +750,7 @@ def test_server_5_1():
     yield server
     with allure.step("Stop test server"):
         if endpoint is not None:
+            ss.chk_eha_config()
             allure.attach("Stop test server", "Stop test server:{}".format(endpoint))
             endpoint.stopListening()
 
