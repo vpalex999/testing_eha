@@ -12,6 +12,7 @@ from twisted.internet.protocol import ServerFactory
 from twisted.internet.defer import Deferred
 from twisted.internet.defer import succeed
 
+from sources.hdlc import hdlc_code
 
 def date_time():
     nt = datetime.now()
@@ -771,12 +772,15 @@ class ServerServiceProtocol_5_1(Protocol):
         print("{} {:0.3f} receive status: {}".format(date_time(), delta_time, data))
 
     def dataSend(self, status):
-        hdlc = b'\x10\x02\x00\x01\x02\x00\x00\x00*\x00\xeb\x14\x00\x1c2W\xe4\xeb\xe4\x1b\xe4\x1b\xe4\x1b\xe4\x1b@\xad2W\xe6\x14\x1b\xe4\x1b\xe4\x1b\xe4\x1b\xe4\xbf(\xe6\x10\x10\x10\x83'
+        # own 3257
+        order = "00 01 02 00 00 00 1C 00 04 FB 00 0E 32 57 74 04 C1 81 2F 32 57 76 FB 3E 7E F5 60 2D"
+        hdlc_order = hdlc_code(order)
+        hdlc_b = b'\x10\x02\x00\x01\x02\x00\x00\x00*\x00\xeb\x14\x00\x1c2W\xe4\xeb\xe4\x1b\xe4\x1b\xe4\x1b\xe4\x1b@\xad2W\xe6\x14\x1b\xe4\x1b\xe4\x1b\xe4\x1b\xe4\xbf(\xe6\x10\x10\x10\x83'
         delta_time = time.time() - self.factory.start_time
         self.factory.delta_orders.append(time.time() - self.factory.start_time)
-        self.transport.write(hdlc)
+        self.transport.write(hdlc_b)
         self.factory.start_time = time.time()
-        print("{} {:0.3f} send data: {}".format(date_time(), delta_time, hdlc))
+        print("{} {:0.3f} send data: {}".format(date_time(), delta_time, hdlc_b))
         self.factory.stat_orders["count_send_orders"] += 1
         self.timer_600()
 

@@ -1,0 +1,27 @@
+import pytest
+from sources.hdlc import hdlc_code
+
+
+@pytest.fixture()
+def own_3257():
+    hdlc = b'\x10\x02\x00\x01\x02\x00\x00\x00\x1c\x00\x04\xfb\x00\x0e2Wt\x04\xc1\x81/2Wv\xfb>~\xf5`-\x10\x83'
+    source = "0x0 0x1 0x2 0x0 0x0 0x0 0x1C 0x0 0x4 0xFB 0x0 0xE 0x32 0x57 0x74 0x4 0xC1 0x81 0x2F 0x32 0x57 0x76 0xFB 0x3E 0x7E 0xF5 0x60 0x2D".split(" ")
+    return source, hdlc
+
+
+def test_hdlc_code(own_3257):
+    print(own_3257)
+    src, etalon = own_3257
+    result = hdlc_code(src)
+    assert result.__eq__(etalon), "Wrong equal!!"
+
+
+
+
+
+
+
+
+
+
+
