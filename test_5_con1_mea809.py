@@ -5,8 +5,11 @@ import pytest
 import allure
 
 
+
+
+
 @pytest.fixture()
-def maket3_test_5_con1(test_server_5_1, data_maket_mea809, check_side_mea809):
+def maket3_test_5_con1(test_server_5_1, check_side_mea809, data_maket_mea809, ):
     return test_server_5_1(data_maket_mea809, data_maket_mea809["server_port1"], "test_5")
 
 

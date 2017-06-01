@@ -10,9 +10,7 @@ __pycache__/
 .Python
 env/
 .idea/
-reports/
-allure_cmd/
-allure-report/
+
 build/
 develop-eggs/
 dist/
@@ -106,4 +104,9 @@ ENV/
 
 # for project
 other.py
+reports/
+allure_cmd/
+allure-report/
+sources/
+
 

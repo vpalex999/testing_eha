@@ -171,7 +171,124 @@ def data_maket_mea1209_1211():
     return data
 
 @pytest.fixture()
-def data_maket_mea809():
+def from_ok_3257():
+    ok = [{"ocAddr":"3257", "Zones": [0,1,2,3]}]
+    return ok
+
+
+
+@pytest.fixture()
+def create_ok(from_ok_3257):
+    def return_ok(ok):
+        # Data from parcer config file
+        # data_from_config = [{"ocAddr":"3257", "Zones": [0,1,2,3]}]
+        data_from_config = ok
+        # OK for work
+        system_data_ok = {}
+        # Default DATA from OK
+        default_data_ok = {
+            "STATUS_OK": "SAFE",
+            "Timer_status": False,
+            "Start_timer": False,
+            "LOOP_OK": False,
+            "AREA_OK": False,
+            "HUB_OK": False,
+            "NUMBER_OK": False,
+            "ADDRESS_OK": False,
+            "Err_Count": 0,
+            "count_a": 1,
+            "count_b": 254,
+            "ORDER_WORK": None,
+            "ZONE_FROM_CNS": dict.fromkeys(range(36), 0),
+            "ZONE_FOR_CNS": dict.fromkeys(range(36), 0),
+            "CODE_ALARM": None,
+            "DESC_ALARM": None,
+            "TELEGRAMM_A": None,
+            "TELEGRAMM_B": None,
+            "RETURN_OK": 0,
+            }
+
+        def zone_for_cns(data_from_config, system_data_ok):
+            telegrams = data_from_config
+
+            for ok in system_data_ok:
+                for tlg in telegrams:
+                    if tlg['ocAddr'] == ok:
+                        zone = tlg['Zones']
+                        zone_dict = {x: zone[x] for x in range(len(zone))}
+                        zone_from_cns = dict.fromkeys(range(36), 0)
+                        zone_from_cns.update(zone_dict)
+                        system_data_ok[ok]["ZONE_FROM_CNS"] = zone_from_cns
+
+        def from_address_ok(address_ok, default_data_ok, reason=None):
+            # print(type(address_ok))
+            def_data = default_data_ok.copy()
+            if type(address_ok) == int:
+                address_ok = "{}".format(address_ok)
+
+            def _code_address_ok(def_data, reason):
+                address_ok = ""
+                result = def_data["LOOP_OK"] << 4
+                temp = def_data["AREA_OK"] << 1
+                result = result | temp
+                address_ok = address_ok + "{:02x}".format(int(hex(result), 16))
+                result = 0
+                temp = def_data["HUB_OK"] << 4
+                result = result | temp
+                temp = def_data["NUMBER_OK"] << 1
+                temp = temp | 1
+                result = result | temp
+                address_ok = address_ok + "{:02x}".format(int(hex(result), 16))
+                def_data["ADDRESS_OK"] = address_ok
+
+            if len(address_ok) == 4:
+                loop = int(address_ok[0], 16)
+                area = int(address_ok[1], 16)
+                hub = int(address_ok[2], 16)
+                number = int(address_ok[3], 16)
+                if area & 1 != 0:
+                    reason = "Invalid configure AREA OK!"
+                    print("Invalid configure AREA OK!")
+                    return False, reason
+                elif number & 1 != 1:
+                    reason = "Invalid configure Number OK!"
+                    print("Invalid configure Number OK!")
+                    return False
+                else:
+                    area = area >> 1
+                    number = number >> 1
+                    def_data["LOOP_OK"], def_data["AREA_OK"], def_data["HUB_OK"], def_data[
+                        "NUMBER_OK"] = loop, area, hub, number
+                    _code_address_ok(def_data, reason)
+                    diction = {}
+                    diction[def_data["ADDRESS_OK"]] = def_data
+                    return diction
+            else:
+                reason = "number of characters to be equal to 4"
+                print("number of characters to be equal to 4")
+                return False
+
+        def create_ok(data_from_config, system_data_ok, default_data_ok, from_address_ok):
+
+            addresses_ok = data_from_config
+            try:
+                for ok in addresses_ok:
+                    system_data_ok.update(from_address_ok(ok['ocAddr'], default_data_ok))
+                return True
+            except:
+                print("Wrong adress OK: '{}'".format(ok))
+                return False
+
+        if create_ok(data_from_config, system_data_ok, default_data_ok, from_address_ok):
+            zone_for_cns(data_from_config, system_data_ok)
+            return system_data_ok
+    return return_ok(from_ok_3257)
+
+
+
+
+@pytest.fixture()
+def data_maket_mea809(create_ok):
     data = {
             "server_port1": 10000,
             "server_port2": 10001,
@@ -189,10 +306,34 @@ def data_maket_mea809():
             "statistics": {
                 "stat_orders": {"count_send_orders": 0, "min_delta": 0, "max_delta": 0, "average": 0},
                 "stat_status": {"count_received_status": 0, "min_delta": 0, "max_delta": 0, "average": 0}
+            },
+            "system_data": {
+                "start_time": time.time(),
+                "hdlc": bytearray(),
+                "time_delta": "",
+                "System_Status": "SAFE",
+                "Lost_Connect": False,
+                "FIRST_START": True,
+                "Count_A": 1,
+                "Count_B": 254,
+                "Err_Count": 0,
+                "Timer_status": False,
+                "Start_timer": False,
+                "ORDER_Count_A": 1,
+                "ORDER_Count_B": 254,
+                "ORDER_CODE_ALARM": None,
+                "ORDER_DESC_ALARM": None,
+                "ORDER": None,
+                "ORDER_STATUS": None,
+                "HDLC_SEND_STATUS": None,
+                "OK": create_ok,
+                "WORK_OK": {},
+                "Timer_OK": {},
             }
         }
-
     return data
+
+
 
 @pytest.fixture()
 def chk_active_side_eha():
@@ -669,7 +810,7 @@ class ServerServiceFactory_5_1(Factory):
         print(self.stat_status)
         # self.stat_orders = {"count_send_orders": 0, "min_delta": 0, "max_delta": 0, "average": 0}
         # self.stat_status = {"count_received_status": 0, "min_delta": 0, "max_delta": 0, "average": 0}
-        self.timeout_work_test = 60  # seconds
+        self.timeout_work_test = 10  # seconds
         print("\nInitial factory deferred: {}, protocol: {}, time_out: {}"\
               .format(self.deferred, self.protocol,  self.timeout_connect))
         from twisted.internet import reactor
@@ -712,10 +853,6 @@ class ServerServiceFactory_5_1(Factory):
         dict["average"] = float('{:.3f}'.format(mean(delta)))
 
 
-
-
-
-
 # tearUp/tearDown
 @pytest.yield_fixture()
 def test_server_5_1():
@@ -723,7 +860,6 @@ def test_server_5_1():
     ss = None
 
     @allure.step("Create test_server3() from tearUp/tearDown")
-    # def server(host, port, timeout_connect, data):
     def server(data, port, test=None):
         d = Deferred()
         host = data["server_host"]
